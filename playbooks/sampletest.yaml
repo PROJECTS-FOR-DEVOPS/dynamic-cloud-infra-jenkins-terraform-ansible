@@ -4,7 +4,7 @@
 
   tasks:
   	- name: installing a web server
-  	  yum: name=httpd state=present
+  	  yum: name=nginx state=present
 
   	- name: start webserver
-  	  service: name=httpd state=started 
+  	  service: name=nginx state=started 
