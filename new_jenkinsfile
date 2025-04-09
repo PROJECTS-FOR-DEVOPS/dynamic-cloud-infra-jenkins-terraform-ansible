@@ -1,0 +1,72 @@
+#In this we can create terraform server and ansible runs the playbook on the new terraform created server. It will asks the user for destroy permission.
+
+pipeline {
+  agent { 
+    label 'ansible' // Jenkins agent with Terraform, Ansible, Python, boto, etc.
+  }
+
+  environment {
+    AWS_EC2_PRIVATE_KEY = credentials('ansible-ssh-key') 
+  }
+  parameters {
+    booleanParam(name: 'DESTROY_INFRA', defaultValue: false, description: 'Destroy infra after testing')
+  }
+
+  stages {
+
+    stage('Checkout Code') {
+      steps {
+        echo "Cloning GitHub repo..."
+        sh 'whoami'
+        sh 'hostname -i'
+        git branch: 'master', 
+            credentialsId: 'ansible-ssh-key', 
+            url: 'https://github.com/PROJECTS-FOR-DEVOPS/dynamic-cloud-infra-jenkins-terraform-ansible.git'
+      }
+    }
+
+    stage('Create Servers with Terraform') {
+      steps {
+        echo "Provisioning infrastructure with Terraform..."
+        sh '''
+          cd terraformscripts
+          terraform init
+          terraform apply --auto-approve
+        '''
+      }
+    }
+
+    stage('Run Ansible Playbook') {
+      steps {
+        echo "Running Ansible playbook..."
+        sh 'whoami'
+        sh 'ansible-inventory -i inventory/aws_ec2.yaml --graph'
+
+        sh """
+          ansible-playbook -i inventory/aws_ec2.yaml playbooks/pingServers.yaml \
+            -u ec2-user \
+            --private-key=$AWS_EC2_PRIVATE_KEY \
+            --limit terraformserver \
+            --ssh-common-args='-o StrictHostKeyChecking=no'
+        """
+      }
+    }
+
+    stage('Destroy Servers with Terraform') {
+      when {
+        expression { return params.DESTROY_INFRA == true }
+      }
+      steps {
+        sh 'terraform -chdir=terraformscripts destroy --auto-approve'
+      }
+    }
+  }
+  post {
+    always {
+      echo 'Pipeline execution completed.'
+    }
+    failure {
+      echo 'Pipeline failed. Please check the logs above.'
+    }
+}
+}
